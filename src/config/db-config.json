@@ -1,0 +1,11 @@
+{
+  "host" : "database-1.cmkdqsyvas94.ap-northeast-2.rds.amazonaws.com",
+  "user" : "itemaccount",
+  "password" : "Dkdlxpaqjtm!@12",
+  "database" : "web3log_test",
+  "multipleStatements" : true,
+	"dateStrings": "date",
+	"connectionLimit" : 50,
+  "supportBigNumbers" : true,
+  "bigNumberStrings" : true
+}

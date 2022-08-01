@@ -1,0 +1,8 @@
+{
+  "host": "simtongsql1.mysql.database.azure.com",
+  "user": "simtongsql@simtongsql1",
+  "password": "Sim257sql",
+  "database": "pushmessagesimtong",
+  "multipleStatements": true,
+  "dateStrings": "date"
+}

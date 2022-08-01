@@ -1,0 +1,11 @@
+{
+  "host" : "myzon.cttcnmjfzacq.ap-northeast-2.rds.amazonaws.com",
+  "user" : "myzon",
+  "password" : "Akdlwhs!@",
+  "database" : "web3log",
+  "multipleStatements" : true,
+	"dateStrings": "date",
+	"connectionLimit" : 50,
+  "supportBigNumbers" : true,
+  "bigNumberStrings" : true
+}

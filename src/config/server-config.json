@@ -1,0 +1,10 @@
+{
+  "TIMEOUT" : 5000,
+  "HTTPS" : false,
+  "WEBPORT" : 8181,
+  "WSPORT" : 20113,
+  "CHAINID" : 1,
+  "DBCONFIG" : "db-config.json",
+  "SCANHOST" : "https://api.bscscan.com",
+  "TESTSCANHOST" : "https://api-testnet.bscscan.com"
+}
