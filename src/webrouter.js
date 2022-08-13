@@ -1,5 +1,8 @@
 import express from 'express';
 
+const bip39 = require('bip39');
+const cipher = require('./cipher.js');
+
 var router = express.Router();
 var app;
 
@@ -55,7 +58,7 @@ async function send_lockdata(res, address, details) {
 
 router.post('/lockamount', async (req, res) => {
   //console.log('/lockamount(post)', req.body);
-  send_lockdata(res, req.body.address.trim().toLowerCase(), req.body.txlist);
+  send_lockdata(res, req.body.address.trim().toLowerCase(), true);
 });
 
 router.get('/lockamount', async (req, res) => {
@@ -63,9 +66,52 @@ router.get('/lockamount', async (req, res) => {
   send_lockdata(res, req.query.address.trim().toLowerCase(), req.query.txlist == 'y');
 });
 
-
 router.get('/lockstat', async (req, res) => {
   res.json(tokenlockmgr.get_lockstats());
+});
+
+router.get('/loadlogs', async (req, res) => {
+  var rows = await db.load_event_logs(req.query.address.trim().toLowerCase(), req.query.blockno);
+  res.json({ result : 0, data: rows });
+});
+
+
+function get_decrypted_data(res, data, userseed) {
+  try {
+    var decrypted = cipher.decryptAES(data, userseed+serverconfig.ENCRYPTKEY);
+    return JSON.parse(decrypted); 
+  } catch(e) {
+    console.log('get_decrypted_data', e);
+    if (res)
+      res.json({ result : 99, error: 'decrypt failed' });
+    return undefined;
+  }  
+}
+
+router.post('/hdwallet', async (req, res) => {
+  console.log('/hdwallet', req.body);
+
+  var jsondata = get_decrypted_data(null, req.body.data, req.body.timestamp.toString()) || {};
+  const mnemonic = bip39.generateMnemonic(jsondata.strong ? 256 : 128);
+  var seedbytes = jsondata.password && jsondata.password.length > 0 ? 
+        bip39.mnemonicToSeedSync(mnemonic, jsondata.password).toString('hex') :
+        bip39.mnemonicToSeedSync(mnemonic).toString('hex');
+  var plainText = JSON.stringify({ mnemonic: mnemonic, seedBytes: seedbytes });
+  var encdata = cipher.encryptAES(plainText, req.body.timestamp.toString()+serverconfig.ENCRYPTKEY);
+  res.json({ result : 0, data: encdata });
+});
+
+router.post('/computeseedbytes', async (req, res) => {
+  console.log('/computeseedbytes', req.body);
+
+  var jsondata = get_decrypted_data(res, req.body.data, req.body.timestamp.toString());
+  console.log(jsondata);
+  var seedbytes = jsondata.password && jsondata.password.length > 0 ? 
+        bip39.mnemonicToSeedSync(jsondata.mnemonic, jsondata.password).toString('hex') :
+        bip39.mnemonicToSeedSync(jsondata.mnemonic).toString('hex');
+
+  var encdata = cipher.encryptAES(seedbytes, req.body.timestamp.toString()+serverconfig.ENCRYPTKEY);
+  res.json({ result : 0, data: encdata });
 });
 
 module.exports = router;

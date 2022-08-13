@@ -2,6 +2,7 @@ import axios from 'axios';
 import { LexModelBuildingService } from '../node_modules/aws-sdk/index.js';
 var BigInteger = require('node-biginteger');
 var db = require('./db.js');
+var util = require('./util');
 
 var contractAddress = '0x517396bD11d750E4417B82F2b0FcFa62a4f2bB96';
 var lockContractAddress = '0x824660d0f3BA91FD84ad0D36e45B88189A06326a';
@@ -10,8 +11,6 @@ var lockContractAddress = '0x824660d0f3BA91FD84ad0D36e45B88189A06326a';
 var apiKey = "2BUPCDPXTUMGBGJXMCWDS184B3DRDEC96D";
 
 var serverconfig = require(__dirname + '/../src/config/server-config.json');
-
-var scanTestHost = "https://api-testnet.bscscan.com";
 
 class Web3agent
 {
@@ -31,10 +30,9 @@ class Web3agent
 
     scan_logs(from, to, address) {
         return new Promise(async (resolve, reject) => {
-            //console.log('scan_logs: ', address, from, to);
+            var query = `${this.scanHost}/api?module=logs&action=getLogs&fromBlock=${from}&toBlock=${to}&address=${address}&apikey=${apiKey}`;
             try {
-                var query = `${this.scanHost}/api?module=logs&action=getLogs&fromBlock=${from}&toBlock=${to}&address=${address}&apikey=${apiKey}`;
-                var res = await axios.get(query, {});
+                var res = await axios.get(query, {timeout: 2000});
                 if (res.data.result.length > 0) {
                     db.insert_eventlog(res.data.result).then((cnt) => {
                         console.log(`[${util.currentTime()}] scan_logs: # of items scanned ${res.data.result.length}, # of rows inserted ${cnt}`);
@@ -44,7 +42,7 @@ class Web3agent
                     resolve([]);
                 }
             } catch(e) {
-                console.log('scan_logs: exception', e.message);
+                console.log(`scan_logs: ${query}, exception ${e.message}`);
                 reject(e);
             }
         });

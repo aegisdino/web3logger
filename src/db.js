@@ -105,11 +105,11 @@ module.exports = {
         values.push(
           [
             blockno, row.address, ts, row.topics[0], row.topics[1], row.topics[2], row.topics[3], 
-            row.data, gasPrice, gasUsed, row.transactionHash, logIndex, txid
+            row.data, gasPrice, gasUsed, row.transactionHash, logIndex, txid, JSON.stringify(row)
           ]);
       }
 
-      dbpool.query("insert into eventlogs (blockno, address, timestamp, topics0, topics1, topics2, topics3, data, gasPrice, gasUsed, txhash, logindex, txindex) values ?" +
+      dbpool.query("insert into eventlogs (blockno, address, timestamp, topics0, topics1, topics2, topics3, data, gasPrice, gasUsed, txhash, logindex, txindex, logtext) values ?" +
               "on duplicate key update txindex = values(txindex)", 
               [values],
               (err, rows) => {
@@ -240,6 +240,19 @@ module.exports = {
               [address, lastblockno, regdate, tokenbalance], (err, rows) => resolve(0));
     });
   },
+
+  async load_event_logs(contractAddress, blockno) {
+    return new Promise((resolve, reject) => {
+      var params = [contractAddress];
+      var query = "select blockno as blockid, timestamp as logdate, logtext from eventlogs where address = ?";
+      if (blockno) {
+        query += " and blockno > ?";
+        params.push(blockno);
+      }
+
+      dbpool.query(query, params, (err, rows) => resolve(rows));
+    });
+  },
   
   async insert_txlist(address, rows) {
     return new Promise((resolve, reject) => {
@@ -315,6 +328,7 @@ module.exports = {
           resolve([addresslist, lastblockno, regdate]);
         }
         else {
+          console.log(err);
           reject(err);
         }
       });

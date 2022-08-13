@@ -123,8 +123,8 @@ function parse_lock_event(event, topics) {
 	var results = Web3EthAbi.decodeLog(_lockEventParams, data, topics);
 	if (results) {
 		var lockedAddress = results['1'].toLowerCase();
-		// if (lockedAddress == '0x467fa8eb55b375d2ed0c84722b72e63597ef9664')
-		// 	console.log('locked', event.txhash, event.blockno, event.timestamp, results);
+		// if (lockedAddress == '0x9885405969afab23faa1c3a3f826c60c4d977e56')
+		//  	console.log('locked', event.txhash, event.blockno, event.timestamp, results);
 
 		db.update_eventlog(event.txhash, event.logindex, lockedAddress, JSON.stringify(results));
 
@@ -134,9 +134,25 @@ function parse_lock_event(event, topics) {
 			tokenlockmap.set(lockedAddress, lockdata);
 		}
 
-		lockdata.list.push({ 
-			amount : results['2'], relasetime : parseInt(results['3']), ownerAddress : results['0'], slot : parseInt(results['4']) 
-		});
+		var slot = parseInt(results['4']);
+		var replaced = false;
+
+		// 혹시라도 중복이 되어 들어가는 경우가 있는지
+		for (var i = 0; i < lockdata.list.length; i++) {
+			if (lockdata.list[i].slot == slot) {
+				lockdata.list[i] = { 
+					amount : results['2'], relasetime : parseInt(results['3']), ownerAddress : results['0'], slot : slot
+				};
+				replaced = true;
+				break;
+			}
+		}
+
+		if (replaced == false) {
+			lockdata.list.push({ 
+				amount : results['2'], relasetime : parseInt(results['3']), ownerAddress : results['0'], slot : slot
+			});
+		}
 
 		update_lockstat(lockdata);
 	} else {
@@ -353,8 +369,8 @@ async function load_logs() {
 		console.log(get_lockstats());
 	}
 
-	// 1초 후에 다시 시작
-	setTimeout(load_logs, 1000);
+	// 2초 후에 다시 시작
+	setTimeout(load_logs, 2000);
 }
 
 module.exports = {
