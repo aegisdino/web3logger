@@ -75,6 +75,12 @@ router.get('/loadlogs', async (req, res) => {
   res.json({ result : 0, data: rows });
 });
 
+router.get('/loadtokenlockstats', async (req, res) => { 
+  var address = req.query.address ? req.query.address.trim().toLowerCase() : undefined;
+  var lastdate = req.query.lastdate ? util.getDBTime(new Date(req.query.lastdate * 1000)) : undefined;
+  var rows = await db.load_tokenlockstat(address, lastdate);
+  res.json({ result : 0, data: rows });
+});
 
 function get_decrypted_data(res, data, userseed) {
   try {

@@ -161,10 +161,14 @@ module.exports = {
   },
 
   // 1개 업데이트
-  async update_tokenlockstat(address, lockdata, amount, regdate) {
+  async update_tokenlockstat(address, lockdata, amount, regdate, owneraddress) {
     return new Promise((resolve, reject) => {
-      dbpool.query("insert into tokenlockstat (address, lockdata, amount, regdate) values (?, ?, ?, ?) on duplicate key update lockdata = values(lockdata), amount = values(amount), regdate = values(regdate)",
-            [address, lockdata, amount, regdate], (err, rows) => {
+      var query = `
+        insert into tokenlockstat (address, lockdata, amount, regdate, owneraddress) values (?, ?, ?, ?, ?) 
+          on duplicate key update lockdata = values(lockdata), amount = values(amount), regdate = values(regdate), owneraddress = values(owneraddress)
+      `;
+      dbpool.query(query,
+            [address, lockdata, amount, regdate, owneraddress], (err, rows) => {
           if (err) console.log(err);
           resolve(0);
       });
@@ -174,8 +178,12 @@ module.exports = {
   // 여러개 insert
   async update_tokenlockstats(lists) {
     return new Promise((resolve, reject) => {
-      dbpool.query("insert into tokenlockstat (address, lockdata, amount, regdate) values ? on duplicate key update lockdata = values(lockdata), amount = values(amount), regdate = values(regdate)",
-            [lists], (err, rows) => {
+      var query = `
+        insert into tokenlockstat (address, lockdata, amount, regdate, owneraddress, updatedate) 
+            values ? on duplicate key update lockdata = values(lockdata), amount = values(amount), 
+            regdate = values(regdate), owneraddress = values(owneraddress), updatedate = values(updatedate)
+      `;
+      dbpool.query(query, [lists], (err, rows) => {
           if (err) console.log(err);
           resolve(0);
       });
@@ -332,6 +340,28 @@ module.exports = {
           reject(err);
         }
       });
+    });
+  },
+
+  async load_tokenlockstat(ownerAddress, lastdate) {
+    return new Promise((resolve, reject) => {
+      var params = [];
+      var wheres = [];
+      var query = "select lockdata, updatedate from tokenlockstat";
+      if (ownerAddress) {
+        wheres.push(" ownerAddress = ? ");
+        params.push(ownerAddress);
+      }
+      if (lastdate) {
+        wheres.push(" updatedate > ? ");
+        params.push(lastdate);
+      }
+
+      if (wheres.length > 0) {
+        query += " where " + wheres.join(" and ");
+      }
+
+      dbpool.query(query, params, (err, rows) => resolve(rows));
     });
   },
 

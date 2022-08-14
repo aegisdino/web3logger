@@ -132,7 +132,8 @@ function parse_lock_event(event, topics) {
 		if (!lockdata) {
 			lockdata = { stat: { address: lockedAddress, amount: bigInt(), count: 0, regdate: event.timestamp }, list: [] };
 			tokenlockmap.set(lockedAddress, lockdata);
-		}
+		} 			
+		lockdata.stat.updatedate = event.timestamp;
 
 		var slot = parseInt(results['4']);
 		var replaced = false;
@@ -252,7 +253,12 @@ async function updata_dirty_lockstats() {
 	for (var entry of tokenlockmap.entries()) {
 		if (entry[1].dirty) {
 			entry[1].dirty = false;
-			updatedata.push([entry[0], JSON.stringify(entry[1]), Math.round(bigInt(entry[1].stat.amount)/bigInt(1e+18)), new Date(entry[1].stat.regdate * 1000).toISOString()]);
+			updatedata.push([
+				entry[0], JSON.stringify(entry[1]), Math.round(bigInt(entry[1].stat.amount)/bigInt(1e+18)), 
+				new Date(entry[1].stat.regdate * 1000).toISOString(), 
+				entry[1].list.length > 0 ? entry[1].list[0].ownerAddress.toLowerCase() : '',
+				new Date(entry[1].stat.updatedate * 1000).toISOString(), 
+			]);
 		}
 	}
 
