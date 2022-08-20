@@ -93,33 +93,49 @@ module.exports = {
     return new Promise((resolve, reject) => {
       var values = [];
 
-      for (var i = 0; i < rows.length; i++) {
-        var row = rows[i];
-        var blockno = Number(row.blockNumber);
-        var ts = Number(row.timeStamp);
-        var gasPrice = Number(row.gasPrice);
-        var gasUsed = Number(row.gasUsed);
-        var logIndex = row.logIndex == '0x' ? 0 : Number(row.logIndex);
-        var txid = row.transactionIndex == '0x' ? 0 : Number(row.transactionIndex);
+      try {
+        for (var i = 0; i < rows.length; i++) {
+          var row = rows[i];
+          var blockno = Number(row.blockNumber);
+          var ts = Number(row.timeStamp);
+          var gasPrice = Number(row.gasPrice);
+          var gasUsed = Number(row.gasUsed);
+          var logIndex = row.logIndex == '0x' ? 0 : Number(row.logIndex);
+          var txid = row.transactionIndex == '0x' ? 0 : Number(row.transactionIndex);
 
-        values.push(
-          [
-            blockno, row.address, ts, row.topics[0], row.topics[1], row.topics[2], row.topics[3], 
-            row.data, gasPrice, gasUsed, row.transactionHash, logIndex, txid, JSON.stringify(row)
-          ]);
+          if (row.topics) {
+            values.push(
+              [
+                blockno, row.address, ts, row.topics[0], row.topics.length > 1 ? row.topics[1] : '', 
+                row.topics.length > 2 ? row.topics[2] : '', row.topics.length > 3 ? row.topics[3] : '', 
+                row.data, gasPrice, gasUsed, row.transactionHash, logIndex, txid, JSON.stringify(row)
+              ]);
+          } else {
+            console.log('insert_eventlog: no topics', row);
+          }
+        }
+      } catch(e) {
+        console.log('insert_eventlog: exception', e);
+        reject(e);
       }
 
-      dbpool.query("insert into eventlogs (blockno, address, timestamp, topics0, topics1, topics2, topics3, data, gasPrice, gasUsed, txhash, logindex, txindex, logtext) values ?" +
-              "on duplicate key update txindex = values(txindex)", 
-              [values],
-              (err, rows) => {
-        if (!err) {
-          resolve(rows.affectedRows);
-        }
-        else {
-          reject(err);
-        }
-      });
+      if (values.length == 0) {
+        resolve(0);
+      }
+      else {
+        dbpool.query("insert into eventlogs (blockno, address, timestamp, topics0, topics1, topics2, topics3, data, gasPrice, gasUsed, txhash, logindex, txindex, logtext) values ?" +
+                "on duplicate key update txindex = values(txindex)", 
+                [values],
+                (err, rows) => {
+          if (!err) {
+            resolve(rows.affectedRows);
+          }
+          else {
+            console.log('insert_eventlog', err);
+            reject(err);
+          }
+        });
+      }
     });
   },
 
@@ -190,6 +206,20 @@ module.exports = {
     });
   },
 
+  async update_tokenholders(lists) {
+    return new Promise((resolve, reject) => {
+      var query = `
+        insert into tokenholders (owneraddress, address, tokenbalance, lockamount, regdate, updatedate) 
+            values ? on duplicate key update tokenbalance = values(tokenbalance), lockamount = values(lockamount), 
+            regdate = values(regdate), updatedate = values(updatedate)
+      `;
+      dbpool.query(query, [lists], (err, rows) => {
+          if (err) console.log(err);
+          resolve(0);
+      });
+    });
+  },
+
   async load_all_tokenlockstats() {
     return new Promise((resolve, reject) => {
       dbpool.query("select address, lockdata, regdate from tokenlockstat",
@@ -201,26 +231,31 @@ module.exports = {
 
   async read_tokenlockstat(address) {
     return new Promise((resolve, reject) => {
-      dbpool.query("select lockdata, regdate from tokenlockstat where address = ?",
-            [address], (err, rows) => {
-              resolve(rows);
-      });
+      var query = "select lockdata, regdate from tokenlockstat where address = ?";
+      dbpool.query(query, [address], (err, rows) => resolve(rows));
     });
   },
 
   async read_tokenlocklogs(address) {
     return new Promise((resolve, reject) => {
-      dbpool.query("select blockno, timestamp, txhash, topics0, decoded from eventlogs where target_address = ?",
-            [address], (err, rows) => {
-              resolve(rows);
+      var query = "select blockno, timestamp, txhash, topics0, decoded from eventlogs where target_address = ?";
+      dbpool.query(query, [address], (err, rows) => resolve(rows));
+    });
+  },
+
+  async load_all_tokenholders(contractAddress) {
+    return new Promise((resolve, reject) => {
+      var query = "select address, tokenbalance, lockamount, regdate, updatedate from tokenholders where owneraddress = ?";
+      dbpool.query(query, [contractAddress], (err, rows) => {
+        resolve(rows);
       });
     });
   },
 
   async update_tokenbalance(address, tokenbalance) {
     return new Promise((resolve, reject) => {
-      dbpool.query("update tokenholders set tokenbalance = ? where address = ?",
-            [tokenbalance.toString(), address], (err, rows) => resolve(0));
+      var query = "update tokenholders set tokenbalance = ? where address = ?";
+      dbpool.query(query, [tokenbalance.toString(), address], (err, rows) => resolve(0));
     });
   },
 
@@ -241,11 +276,11 @@ module.exports = {
     });
   },
 
-  async insert_token_holder(address, lastblockno, regdate, tokenbalance) {
+  async insert_token_holder(address, tokenbalance) {
     return new Promise((resolve, reject) => {
-      dbpool.query("insert into tokenholders (address, lastblockno, tokenbalance, regdate) values (?,?,?,?) " +
-              "on duplicate key update lastblockno = values(lastblockno), tokenbalance = values(tokenbalance)",
-              [address, lastblockno, regdate, tokenbalance], (err, rows) => resolve(0));
+      dbpool.query("insert into tokenholders (address, tokenbalance) values (?,?) " +
+              "on duplicate key update tokenbalance = values(tokenbalance)",
+              [address, tokenbalance], (err, rows) => resolve(0));
     });
   },
 
@@ -288,7 +323,8 @@ module.exports = {
               // to, value
               contract = to;
               to = '0x' + row.input.substring(10 + 24, 10 + 64);
-              value = BigInteger.fromString(row.input.substring(10 + 64), 16);
+              var valueText = row.input.substring(10 + 64);
+              value = BigInteger.fromString(valueText, 16);
             }
             else if (signature == 'lockToken') {
               // from, to, value, time
@@ -308,15 +344,18 @@ module.exports = {
 
             // contract creation
             if (to == '' && row.input.contractAddress != '')
-              value = 0;
+              value = BigInteger.zero;
+            contract = to;
           }
-
-          contract = to;
         }
+
+        //console.log(signature, to, valueText, value.toString());
+
+        var date = new Date(Number(row.timeStamp) * 1000);
 
         values.push(
           [
-            blockno, row.hash, row.from, to, value, contract, signature, JSON.stringify(row)
+            blockno, row.hash, row.from, to, value, contract, signature, JSON.stringify(row), date,
           ]
         );
 
@@ -328,12 +367,12 @@ module.exports = {
         lastblockno = blockno;
       }
 
-      dbpool.query("insert into txlogs (blockno, txhash, `from`, `to`, `value`, contract, signature, data) values ? " +
-              "on duplicate key update value = values(value)",
+      dbpool.query("insert into txlogs (blockno, txhash, `from`, `to`, `value`, contract, signature, data, regdate) values ? " +
+              "on duplicate key update value = values(value), contract = values(contract)",
               [values],
               async (err, rows) => {
         if (!err) {
-          resolve([addresslist, lastblockno, regdate]);
+          resolve([addresslist, lastblockno, regdate, values]);
         }
         else {
           console.log(err);
@@ -365,6 +404,18 @@ module.exports = {
     });
   },
 
+  async load_lasttxid(address) {
+    return new Promise((resolve, reject) => {
+      dbpool.query("select ifnull(lastid, 0) as lastid from lasttxid where address = ?", [address], (err, rows) => resolve(rows.length > 0 ? rows[0]['lastid'] : 0));
+    });    
+  },
+
+  async insert_lasttxid(address, lastid) {
+    return new Promise((resolve, reject) => {
+      dbpool.query("insert into lasttxid (address, lastid) values (?,?) on duplicate key update lastid = values(lastid)", 
+        [address, lastid], (err, rows) => resolve(rows));
+    });    
+  }
 
   // {"blockNumber":"19198250","timeStamp":"1656765258","hash":"0x45ce736f8dca9a9fad7a2217dd418490ae8dc44fc636b98bb19e214a1feb0abd",
   //"nonce":"0","blockHash":"0xaf8a87093709b3925bb6f757305a1659ab7ce8b9d86e93076c074d6484f9d193","transactionIndex":"108",

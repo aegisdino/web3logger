@@ -1,6 +1,9 @@
-var serverconfig = require(__dirname + '/../src/config/server-config.json');
+const moment = require('moment');
+
 const fs = require('fs');
-var crypto = require('crypto');
+const crypto = require('crypto');
+
+const serverconfig = require(__dirname + '/../src/config/server-config.json');
 
 String.prototype.format = function () {
   var args = arguments;
@@ -8,9 +11,6 @@ String.prototype.format = function () {
     return typeof args[number] != 'undefined' ? args[number] : match;
   });
 };
-
-var timezoneOffset = new Date().getTimezoneOffset() * 60000;
-console.log('Asia/Seoul timezoneOffset should be -9', timezoneOffset/(60000*60));
 
 module.exports = {
   humanizeFloat(x, coin) {
@@ -21,21 +21,21 @@ module.exports = {
   getDBTime(d) {
     // delete the dot and everything after
     if (typeof d == 'object')
-      return new Date(d).toISOString().replace(/T/, ' ').replace(/\..+/, '');
+      return moment(d).format('YYYY-MM-DD HH:mm:ss');
     else
       return this.getDBTime(new Date(d));
   },
 
   NOW() { 
-    return this.getDBTime(new Date(Date.now()-timezoneOffset));
+    return this.getDBTime(new Date(Date.now()));
   },
   
   currentTime() {
-	  return (new Date(Date.now()-timezoneOffset).toISOString()).replace(/T/, ' ').replace(/\..+/, '');
+    return moment(new Date()).format('YYYY-MM-DD HH:mm:ss');
   },
 
   addDays(date, days) {
-    var result = date ? new Date(date) : new Date(Date.now()-timezoneOffset);
+    var result = date ? new Date(date) : new Date(Date.now());
     result.setDate(result.getDate() + days);
     return result;
   },

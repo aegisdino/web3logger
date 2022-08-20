@@ -7,5 +7,7 @@
   "DBCONFIG" : "db-config.json",
   "SCANHOST" : "https://api.bscscan.com",
   "TESTSCANHOST" : "https://api-testnet.bscscan.com",
-  "ENCRYPTKEY" : "bc4f06b41af811ed861d0242ac120002"
+  "RPCURL": "https://bsc-dataseed.binance.org",
+  "ENCRYPTKEY" : "bc4f06b41af811ed861d0242ac120002",
+  "SCANPERIOD" : 5000
 }

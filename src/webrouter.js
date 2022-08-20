@@ -10,6 +10,7 @@ var serverconfig = require(__dirname + '/../src/config/server-config.json');
 
 var tokenlockmgr = require('./tokenlockmgr.js');
 var nftmgr = require('./nftmgr.js');
+var balancemgr = require('./balancemgr.js');
 
 var db = require('./db.js');
 var util = require('./util.js');
@@ -18,10 +19,21 @@ router.startServer = async function (_app) {
   app = _app;
 
   tokenlockmgr.start(this);
+  balancemgr.start('0x517396bD11d750E4417B82F2b0FcFa62a4f2bB96');
+
   //nftmgr.start(this);
 };
 
 async function send_lockdata(res, address, details) {
+  var result = await read_lockdata(address, details);
+  if (result != null) {
+    res.json(result);
+  } else {
+    res.sendStatus(500);
+  }  
+}
+
+async function read_lockdata(address, details) {
   try {
     var txlist = [];
     if (details) {
@@ -36,23 +48,22 @@ async function send_lockdata(res, address, details) {
     var lockdata = tokenlockmgr.find(address);
     if (lockdata) {
       console.log(`[${util.currentTime()}] ${lockdata.stat.address}: ${lockdata.stat.amount} ITEMs, #${lockdata.stat.count}, txlist# ${txlist.length} (cache)`);
-      res.json({ result : 0, data: lockdata, txlist: txlist });
+      return { result : 0, data: lockdata, txlist: txlist };
     }
     else {
       // 캐시에 없으면 디비에 있는 걸 보내줌
-      db.read_tokenlockstat(address).then((rows) => {
-        if (rows.length> 0) {          
-          var lockdata = JSON.parse(rows[0].lockdata);
-          console.log(`[${util.currentTime()}] ${lockdata.stat.address}: ${lockdata.stat.amount} ITEMs, #${lockdata.stat.count}, txlist# ${txlist.length} (db)`);
-          res.json({ result : 0, data: lockdata, txlist: txlist });
-        } else {
-          res.json({ result : 1, address: address });
-        }
-      });
+      var rows = await db.read_tokenlockstat(address);
+      if (rows.length> 0) {          
+        var lockdata = JSON.parse(rows[0].lockdata);
+        console.log(`[${util.currentTime()}] ${lockdata.stat.address}: ${lockdata.stat.amount} ITEMs, #${lockdata.stat.count}, txlist# ${txlist.length} (db)`);
+        return { result : 0, data: lockdata, txlist: txlist };
+      } else {
+        return { result : 1, address: address };
+      }
     }
   } catch(e) {
-    console.log('send_lockdata', e);
-    res.sendStatus(500);
+    console.log('send_lockdata: exception', e);
+    return null;
   }  
 }
 
@@ -63,13 +74,26 @@ router.post('/lockamount', async (req, res) => {
 
 router.get('/lockamount', async (req, res) => {
   //console.log('/lockamount(get)', req.query);
-  send_lockdata(res, req.query.address.trim().toLowerCase(), req.query.txlist == 'y');
+  if (req.query.view != 'txt') {
+    send_lockdata(res, req.query.address.trim().toLowerCase(), req.query.txlist == 'y');
+  }
+  else {
+    var result = await read_lockdata(req.query.address.trim().toLowerCase(), req.query.txlist == 'y');
+    res.send('<pre>' + JSON.stringify(result, null, 4) + '</pre>');
+  }
 });
 
-router.get('/lockstat', async (req, res) => {
-  res.json(tokenlockmgr.get_lockstats());
+// 날짜별 잠금 상태 웹에서 보고자 할 때
+router.get('/dailylockstat', async (req, res) => {
+  var data = tokenlockmgr.get_lockstats();
+  if (req.query.view == 'txt')
+    res.send('<pre>' + JSON.stringify(data, null, 4) + '</pre>');
+  else
+    res.json(data);
 });
 
+// 모든 이벤트 로그를 요청
+// 데이터를 한번에 받아가는 형태라 느림
 router.get('/loadlogs', async (req, res) => {
   var rows = await db.load_event_logs(req.query.address.trim().toLowerCase(), req.query.blockno);
   res.json({ result : 0, data: rows });
@@ -111,7 +135,6 @@ router.post('/computeseedbytes', async (req, res) => {
   console.log('/computeseedbytes', req.body);
 
   var jsondata = get_decrypted_data(res, req.body.data, req.body.timestamp.toString());
-  console.log(jsondata);
   var seedbytes = jsondata.password && jsondata.password.length > 0 ? 
         bip39.mnemonicToSeedSync(jsondata.mnemonic, jsondata.password).toString('hex') :
         bip39.mnemonicToSeedSync(jsondata.mnemonic).toString('hex');

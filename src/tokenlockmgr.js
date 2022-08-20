@@ -1,16 +1,19 @@
-const web3 = require('web3')
 const Web3EthAbi = require('web3-eth-abi');
-var bigInt = require("big-integer");
+const moment = require('moment');
+const Web3 = require('web3');
+const Web3agent = require('./web3agent');
+const BigInteger = require("big-integer");
 
 var tokenlocklogs = [];
-var app;
-var Web3agent = require('./web3agent');
 
 var web3agent = new Web3agent();
+var web3 = new Web3();
 
 var tokenlockmap = new Map();
 var db = require('./db.js');
 var util = require('./util.js');
+
+var serverconfig = require(__dirname + '/../src/config/server-config.json');
 
 const lockContractAddress = '0x824660d0f3BA91FD84ad0D36e45B88189A06326a';
 
@@ -105,13 +108,38 @@ const _unlockEventParams = [
 	}
 ];
 
+var token_lock_subscription;
+var token_lock_event_received = false;
+
+function subscribe_lock_transfer() {
+	token_lock_subscription = web3.eth.subscribe('logs', {
+	    address: lockContractAddress
+	}, function(error, result) {
+    	if (!error) {
+			token_lock_event_received = true;
+    	    console.log('subscribe_lock_transfer', result);
+		}
+	});
+}
+
+function unsubscribe_token_transfer() {
+	if (token_lock_subscription) {
+		// unsubscribes the subscription
+		token_lock_subscription.unsubscribe(function(error, success){
+			if(success)
+				console.log('Successfully unsubscribed!');
+		});
+		token_lock_subscription = null;
+	}
+}
+
 function update_lockstat(lockdata) {
 	lockdata.list = lockdata.list.filter(v => v.amount != '');
 	lockdata.stat.count = lockdata.list.length;
-	lockdata.stat.amount = bigInt();
+	lockdata.stat.amount = BigInteger();
 
 	lockdata.list.forEach((v) => {
-		lockdata.stat.amount += bigInt(v.amount);
+		lockdata.stat.amount += BigInteger(v.amount);
 	});
 	lockdata.stat.amount = lockdata.stat.amount.toString(10);
 
@@ -130,7 +158,7 @@ function parse_lock_event(event, topics) {
 
 		var lockdata = tokenlockmap.get(lockedAddress);
 		if (!lockdata) {
-			lockdata = { stat: { address: lockedAddress, amount: bigInt(), count: 0, regdate: event.timestamp }, list: [] };
+			lockdata = { stat: { address: lockedAddress, amount: BigInteger(), count: 0, regdate: event.timestamp }, list: [] };
 			tokenlockmap.set(lockedAddress, lockdata);
 		} 			
 		lockdata.stat.updatedate = event.timestamp;
@@ -175,11 +203,10 @@ async function parse_unlock_event(event, topics) {
 		var lockdata = tokenlockmap.get(lockedAddress);
 		if (lockdata) {
 			// 3번은 비트 마스크
-			var slotmask = (1 << parseInt(results['3']));
+			var slotmask = parseInt(results['3']);
 			for (var i = 0; i < lockdata.list.length; i++) {
 				if (((1 << lockdata.list[i].slot) & slotmask) != 0) {
-					if (lockdata.list[i])
-						lockdata.list[i].amount = '';
+					lockdata.list[i].amount = '';
 				}
 			}
 
@@ -245,20 +272,30 @@ function parse_token_lock_logs(newlogs) {
 }
 
 var load_logs_count = 0;
+var last_dailylist_dump_time = 0;
 
 async function updata_dirty_lockstats() {
 	var updatedata = [];
 	var updatedata = [];
 
-	for (var entry of tokenlockmap.entries()) {
+	for (var entry of tokenlockmap.entries()) {		
 		if (entry[1].dirty) {
 			entry[1].dirty = false;
-			updatedata.push([
-				entry[0], JSON.stringify(entry[1]), Math.round(bigInt(entry[1].stat.amount)/bigInt(1e+18)), 
+
+			var rowdata = [
+				entry[0], JSON.stringify(entry[1]), Math.round(BigInteger(entry[1].stat.amount)/BigInteger(1e+18)), 
 				new Date(entry[1].stat.regdate * 1000).toISOString(), 
 				entry[1].list.length > 0 ? entry[1].list[0].ownerAddress.toLowerCase() : '',
-				new Date(entry[1].stat.updatedate * 1000).toISOString(), 
-			]);
+			];
+			
+			try {
+				rowdata.push((new Date(entry[1].stat.updatedate * 1000)).toISOString());
+			} catch(e) {
+				console.log('update_dirty_lockstats: invalid date', entry[1].stat.address, entry[1].stat.updatedate);
+				rowdata.push('');
+			}
+
+			updatedata.push(rowdata);
 		}
 	}
 
@@ -267,14 +304,14 @@ async function updata_dirty_lockstats() {
 }
 
 function get_lockstats() {
-	var totalAmount =  bigInt();
+	var totalAmount =  BigInteger();
 	var lockCount = 0;
 
 	var datemap = new Map();
 
 	for (var entry of tokenlockmap.entries()) {
 		if (entry[1].stat.count > 0) {
-			var amount = Math.round(bigInt(entry[1].stat.amount)/bigInt(1e+18));
+			var amount = Math.round(BigInteger(entry[1].stat.amount)/BigInteger(1e+18));
 
 			lockCount++;
 			totalAmount += amount;
@@ -304,7 +341,14 @@ function get_lockstats() {
 	};
 
 	return result;
-  }
+}
+
+function print_daily_lock_stat() {
+	var stat = get_lockstats();
+	var today = moment(new Date()).format('YYYY-MM-DD');
+	var todayStat = stat.dailystat[today] ? JSON.stringify(stat.dailystat[today]) : 'none';
+	console.log(`lock stat: addresscount ${stat.addresscount}, lockaddresscount ${stat.lockaddresscount}, totalamount ${stat.totalamount}, today ${todayStat}`);
+}
 
 async function load_logs() {
 	// 네트워크가 과밀 상태일 때는 같은 블록 정보도 나중에 쓰여지는 경우가 존재함
@@ -333,7 +377,16 @@ async function load_logs() {
 
 		console.log(`[${util.currentTime()}] load_logs: eventlogs # in DB ${eventlogs.length}`);
 
-		console.log(get_lockstats());
+		// 5분에 한번씩 출력
+		var now = new Date().getTime();
+		if (last_dailylist_dump_time == 0 || now - last_dailylist_dump_time >= 5 * 60 * 1000) {
+			last_dailylist_dump_time = now;
+			print_daily_lock_stat();
+		}
+	} else {
+		if (!token_lock_event_received) 
+			return;
+		console.log(`[${util.currentTime()}] load_logs: lock event exists`);
 	}
 
 	// 스캔데이터가 1000개가 넘는 경우는 루프를 돌게 되며
@@ -372,19 +425,22 @@ async function load_logs() {
 	
 	if (total_scan_count > 0 || (load_logs_count % 100) == 0) {
 		console.log(`[${util.currentTime()}] load_logs: eventlogs ${tokenlocklogs.length}, lock account # ${tokenlockmap.size}, collected ${total_scan_count}`);
-		console.log(get_lockstats());
 	}
 
-	// 2초 후에 다시 시작
-	setTimeout(load_logs, 2000);
+	// 5초 후에 다시 시작
+	setTimeout(load_logs, serverconfig.SCANPERIOD || 5000);
+
+	if (total_scan_count > 0) {
+		token_lock_event_received = false;
+	}
 }
 
 module.exports = {
-  async start(_app) {
-    app = _app;
-
+  async start() {
 	console.log('start tokenlockmgr');
 	await load_logs();
+
+	subscribe_lock_transfer();
   },
 
   find(address) {
